@@ -520,6 +520,13 @@ export function resetAll() {
   emit([{ type: 'reset' }]);
 }
 
+/** Replace all data with a copy that came from cloud sync. */
+export function replaceState(raw) {
+  state = migrate(raw);
+  persist();
+  emit([{ type: 'sync' }]);
+}
+
 export function importState(raw) {
   state = migrate(raw);
   state.onboarded = true;

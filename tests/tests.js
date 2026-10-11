@@ -10,6 +10,7 @@ import { pickQuote } from '../js/motivation.js';
 import { defaultState, makeTask, makeHabit, makeGoal } from '../js/defaults.js';
 import { memoryAdapter } from '../js/storage.js';
 import * as store from '../js/store.js';
+import { splitState, joinDocs, docHash, summarize } from '../js/sync-model.js';
 
 const out = document.getElementById('out');
 let passed = 0, failed = 0;
@@ -271,6 +272,53 @@ test('quote picker avoids recently shown quotes and the excluded one', () => {
     ok(q.id !== first.id, 'should not repeat the current quote');
   }
   eq(pickQuote(s, 'same-seed').id, pickQuote(s, 'same-seed').id, 'deterministic with seed');
+});
+
+// ---------- Sync model ----------
+function richState() {
+  withStore(fresh());
+  const today = store.today();
+  const a = store.addTask({ title: 'A', xp: 10 });
+  store.addTask({ title: 'B', repeat: { kind: 'daily', days: [] }, dueDate: today });
+  store.completeTask(a);
+  const h = store.addHabit({ name: 'Water', target: 2 });
+  store.logHabit(h, today, 2);
+  store.logHabit(h, addDays(today, -40), 1);
+  store.savePlan(today, { priorities: ['x', '', ''], xpTarget: 120 });
+  store.saveSalesEntry({ day: today, amount: 500, deals: 1, leads: 3 });
+  store.setSalesTarget(today.slice(0, 7), 1000);
+  const g = store.addGoal({ title: 'G' });
+  store.addMilestone(g, 'M1');
+  const s = store.getState();
+  // An old task from a previous month, to exercise multiple month documents.
+  s.tasks.push({ ...s.tasks[0], id: 'old', title: 'Old', createdAt: '2025-01-15T10:00:00.000Z' });
+  return s;
+}
+test('splitState → joinDocs round-trips all data', () => {
+  const s = richState();
+  const back = store.migrate(joinDocs(splitState(s)));
+  // Compare content regardless of object-key or array order.
+  const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+  const norm = (x) => JSON.stringify(canon({ ...x, tasks: [...x.tasks].sort((a, b) => a.id.localeCompare(b.id)), ledger: [...x.ledger].sort((a, b) => a.id.localeCompare(b.id)) }));
+  eq(norm(back), norm(store.migrate(JSON.parse(JSON.stringify(s)))));
+});
+test('history is split into one document per month plus core', () => {
+  const docs = splitState(richState());
+  ok(docs.core && !docs.core.tasks && !docs.core.ledger, 'core has no history arrays');
+  const months = Object.keys(docs).filter((k) => k.startsWith('m-')).sort();
+  ok(months.includes('m-2025-01'), 'old task lands in its own month');
+  ok(months.length >= 3, `expected several month docs, got ${months}`);
+  ok(Object.values(docs).every((d) => JSON.stringify(d).length < 900000), 'each doc under the Firestore size limit');
+});
+test('doc hashes are stable and change with content', () => {
+  const docs = splitState(richState());
+  eq(docHash(docs.core), docHash(JSON.parse(JSON.stringify(docs.core))));
+  const changed = { ...docs.core, profile: { ...docs.core.profile, name: 'Other' } };
+  ok(docHash(changed) !== docHash(docs.core));
+});
+test('summary treats a fresh or samples-only state as empty', () => {
+  ok(summarize(fresh()).empty === true || summarize(fresh()).missions === 0);
+  ok(!summarize(richState()).empty, 'state with XP is not empty');
 });
 
 document.getElementById('summary').innerHTML = failed ? `<span class="fail">${failed} failed</span>, ${passed} passed` : `<span class="pass">All ${passed} tests passed</span>`;

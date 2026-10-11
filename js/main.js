@@ -8,6 +8,7 @@ import { openTaskForm, openHabitForm, openHabitLog, openGoalForm, openSalesEntry
 import { showOnboarding } from './onboarding.js';
 import { openFocus, initFocus } from './focus.js';
 import { openQuickAdd, openHabitDetail, openGoalDetail } from './sheets.js';
+import * as sync from './sync.js';
 import { avatar, catChip, priorityBadge } from './components.js';
 import { relDay, fmtTime, fmtDay, addMonths, monthOf, timeHM } from './dates.js';
 import { STATUSES } from './defaults.js';
@@ -144,6 +145,7 @@ function render() {
     main.innerHTML = `<div class="empty"><span class="empty-icon">${icon('alert', 24)}</span><h3>Something went wrong showing this page</h3><p>${esc(err.message)}</p><p class="muted small">Your data is safe. Try another page or reload.</p><button class="btn primary" onclick="location.reload()">Reload</button></div>`;
   }
   renderChrome(state, c.today);
+  if (r === 'settings' && !sync.getStatus().linked) sync.preload().catch(() => {});
   if (key && !sheetOpen()) main.querySelector(key)?.focus({ preventScroll: true });
   const err = store.getSaveError();
   if (err) showStorageWarning(err);
@@ -165,7 +167,7 @@ function handleEvents(state, events) {
     if (e.type === 'achievement') achievementPopup(e.name, e.xp);
     if (e.type === 'milestone') toast(`Milestone complete: ${e.title}`);
     if (e.type === 'levelup') setTimeout(() => levelUpModal(e.level, rankFor(e.level)), reduce ? 0 : 450);
-    if (e.type === 'reset' || e.type === 'import') { if (!state.onboarded) showOnboarding(); }
+    if (e.type === 'reset' || e.type === 'import' || e.type === 'sync') { if (!state.onboarded && !document.querySelector('.onboarding')) showOnboarding(); }
   }
 }
 
@@ -254,6 +256,19 @@ function openMoreMenu() {
 const actions = {
   'task-toggle': (d) => toggleTaskWithFeedback(d.id),
   'quick-add': () => openQuickAdd(),
+  'sync-signin': async () => {
+    try {
+      const r = await sync.signIn();
+      if (r === 'cloud') toast('Signed in — your saved progress is on this device now');
+      else if (r) toast('Signed in — your progress is now backed up and syncing');
+    } catch (e) { toast(e.message, { type: 'error', duration: 7000 }); }
+  },
+  'sync-now': () => sync.flush(),
+  'sync-signout': async () => {
+    if (await confirmDialog({ title: 'Sign out of sync?', message: 'Your data stays on this device. Changes made here won’t sync to your other devices until you sign in again.', confirmLabel: 'Sign out' })) {
+      await sync.signOut(); toast('Signed out of sync', { type: 'info' });
+    }
+  },
   'habit-open': (d) => openHabitDetail(d.id),
   'goal-open': (d) => openGoalDetail(d.id),
   'toggle-filters': () => { ui.showFilters = !ui.showFilters; render(); },
@@ -312,7 +327,7 @@ const actions = {
   'export-json': () => { exportJSON(); toast('Backup downloaded'); },
   'export-csv': (d) => { exportCSV(d.kind); toast('CSV downloaded'); },
   'reset-all': async () => {
-    if (await confirmDialog({ title: 'Reset everything?', message: 'This permanently deletes all missions, habits, goals, sales, XP and settings from this browser. Export a backup first if you might want it.', confirmLabel: 'Delete all data', danger: true, requireText: 'RESET' })) {
+    if (await confirmDialog({ title: 'Reset everything?', message: `This permanently deletes all missions, habits, goals, sales, XP and settings from this browser${sync.getStatus().linked ? ' AND from your synced account on every device' : ''}. Export a backup first if you might want it.`, confirmLabel: 'Delete all data', danger: true, requireText: 'RESET' })) {
       store.resetAll(); ui.salesMonth = null; location.hash = '#/';
     }
   },
@@ -419,6 +434,18 @@ function boot() {
   });
   matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => applyTheme(store.getState()));
   initFocus();
+  sync.initSync();
+  sync.onStatus(() => {
+    // Refresh only the sync panel so anything typed elsewhere on Settings is kept.
+    const el = route() === 'settings' && document.querySelector('[data-sync-section]');
+    if (!el) return;
+    const wasOpen = el.open;
+    const focused = el.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    el.outerHTML = settings.syncSection();
+    const fresh = document.querySelector('[data-sync-section]');
+    fresh.open = wasOpen || fresh.open;
+    if (focused) fresh.querySelector(`[data-action="${focused}"]`)?.focus();
+  });
   if (!store.getState().onboarded) showOnboarding();
   render();
   backgroundTick();

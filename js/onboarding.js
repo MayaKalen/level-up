@@ -2,6 +2,8 @@ import { esc } from './util.js';
 import { icon } from './icons.js';
 import { THEMES, GOAL_EXAMPLES, STARTER_HABITS, CATEGORIES } from './defaults.js';
 import * as store from './store.js';
+import * as sync from './sync.js';
+import { toast } from './ui.js';
 
 const STEPS = 5;
 
@@ -19,6 +21,7 @@ export function showOnboarding() {
   document.body.appendChild(el);
   document.body.classList.add('modal-open');
   const app = document.getElementById('app');
+  sync.preload().catch(() => {}); // warm up so the Google sign-in window isn't blocked
   app.inert = true;
 
   const chips = (name, items, selected) => `<div class="chip-row">${items.map((it) => `<label class="chip-check"><input type="checkbox" name="${name}" value="${it.id}" ${selected.includes(it.id) ? 'checked' : ''}><span>${esc(it.name)}</span></label>`).join('')}</div>`;
@@ -27,7 +30,9 @@ export function showOnboarding() {
     switch (step) {
       case 0: return `<p class="eyebrow">Welcome to LEVEL UP</p><h1 id="ob-title">Your life, played like an RPG.</h1>
         <p class="muted">Complete missions, build habits and grow toward your goals. Every real action earns XP. Setup takes about a minute — or skip it and start now.</p>
-        <label class="field"><span>What should we call your character?</span><input class="input lg" name="name" maxlength="40" value="${esc(choices.name)}" placeholder="Your name" autocomplete="given-name" autofocus></label>`;
+        <label class="field"><span>What should we call your character?</span><input class="input lg" name="name" maxlength="40" value="${esc(choices.name)}" placeholder="Your name" autocomplete="given-name" autofocus></label>
+        <div class="restore-box"><span class="muted small">Already use LEVEL UP on another device?</span>
+          <button type="button" class="btn ghost sm" data-ob="restore">${icon('user', 15)} Sign in to restore progress</button></div>`;
       case 1: return `<p class="eyebrow">Step 2 of ${STEPS}</p><h1 id="ob-title">What are you working toward?</h1>
         <p class="muted">Pick any that fit. They become editable goals.</p>
         ${chips('goals', GOAL_EXAMPLES.map((g) => ({ id: g.key, name: g.title })), choices.goals)}
@@ -73,6 +78,32 @@ export function showOnboarding() {
     document.getElementById('main')?.focus();
   };
 
+  const close = () => {
+    el.remove();
+    app.inert = false;
+    document.body.classList.remove('modal-open');
+    document.getElementById('main')?.focus();
+  };
+
+  async function restore(btn) {
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+    try {
+      const r = await sync.signIn({ preferCloud: true });
+      if (r === 'cloud' || r === 'linked') { close(); toast('Welcome back — your progress is restored'); return; }
+      if (r === 'empty') {
+        btn.textContent = 'Signed in ✓';
+        toast('No saved progress in this account yet. Finish setup and it will be backed up automatically.', { type: 'info', duration: 6000 });
+        return;
+      }
+    } catch (e) {
+      toast(e.message, { type: 'error', duration: 7000 });
+    }
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+
   const draw = () => {
     el.innerHTML = `<form class="ob-card" novalidate>
       <div class="ob-progress" aria-hidden="true">${Array.from({ length: STEPS }, (_, i) => `<span class="${i <= step ? 'on' : ''}"></span>`).join('')}</div>
@@ -96,6 +127,7 @@ export function showOnboarding() {
     const b = e.target.closest('[data-ob]');
     if (!b) return;
     if (b.dataset.ob === 'back') { capture(); step = Math.max(0, step - 1); draw(); }
+    if (b.dataset.ob === 'restore') { restore(b); return; }
     if (b.dataset.ob === 'skip') {
       if (step > 0) { capture(); finish(false); } else finish(true);
     }

@@ -8,6 +8,38 @@ import { opt } from '../forms.js';
 import { avatar } from '../components.js';
 import * as store from '../store.js';
 import { toast, confirmDialog } from '../ui.js';
+import { getStatus } from '../sync.js';
+
+function ago(ms) {
+  if (!ms) return 'not yet';
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 45) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+export function syncSection() {
+  const st = getStatus();
+  const LABELS = { synced: 'Synced', syncing: 'Syncing…', connecting: 'Connecting…', offline: 'Offline — changes are saved on this device and will sync later', error: 'Sync problem', 'signed-out': 'Signed out' };
+  const body = !st.linked
+    ? `<p class="small">Sign in with Google to back up your progress and use it on your phone, laptop and any other device.</p>
+       <p class="muted small">Everything stays saved on this device too, and the app keeps working offline.</p>
+       ${st.error ? `<p class="small warn-text" role="alert">${esc(st.error)}</p>` : ''}
+       <button class="btn primary" data-action="sync-signin" ${st.state === 'connecting' ? 'disabled' : ''}>${icon('user', 16)} ${st.state === 'connecting' ? 'Signing in…' : 'Sign in with Google'}</button>`
+    : `<p class="small">Signed in as <strong>${esc(st.email || 'your Google account')}</strong></p>
+       <p class="sync-line"><span class="sync-dot ${st.state}" aria-hidden="true"></span><span>${esc(LABELS[st.state] || 'Starting…')}${st.state === 'synced' ? ` · ${esc(ago(st.lastSyncAt))}` : ''}${st.pending && st.state !== 'synced' ? ` · ${st.pending} change${st.pending === 1 ? '' : 's'} waiting` : ''}</span></p>
+       ${st.error ? `<p class="small warn-text" role="alert">${esc(st.error)}</p>` : ''}
+       <div class="row-wrap">
+         ${st.state === 'signed-out' ? `<button class="btn primary sm" data-action="sync-signin">Sign in again</button>` : `<button class="btn ghost sm" data-action="sync-now">${icon('refresh', 15)} Sync now</button>`}
+         <button class="btn ghost sm" data-action="sync-signout">Sign out</button>
+       </div>
+       <p class="muted small">Changes sync automatically. If two devices edit the same thing while offline, the most recent change wins.</p>`;
+  return `<details class="card disclosure" data-sync-section ${!st.linked || st.error ? 'open' : ''}>
+    <summary><span class="disc-title" id="s-sync">Sync across devices</span>${icon('chevronDown', 18)}</summary>
+    <div class="disclosure-body">${body}</div>
+  </details>`;
+}
 
 const AVATAR_COLORS = ['#8b5cf6', '#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 
@@ -44,6 +76,7 @@ export function render({ state }) {
     </div>
   </details>
 
+  ${syncSection()}
   <details class="card disclosure">
     <summary><span class="disc-title" id="s-look">Appearance &amp; time</span>${icon('chevronDown', 18)}</summary>
     <div class="disclosure-body">
@@ -160,8 +193,8 @@ export function render({ state }) {
   <details class="card disclosure">
     <summary><span class="disc-title" id="s-data">Your data</span>${icon('chevronDown', 18)}</summary>
     <div class="disclosure-body">
-    <p class="small">Storage: <strong>${esc(adapter.label)}</strong></p>
-    <p class="muted small">${adapter.persistent ? 'Data stays in this browser on this device. It survives refreshes and restarts, but it is not synced to other devices and is lost if you clear site data. Export a backup regularly.' : 'Browser storage is unavailable, so data will be lost when you close this tab. Export before leaving.'}</p>
+    <p class="small">Storage: <strong>${esc(adapter.label)}</strong>${getStatus().linked ? ' + cloud sync' : ''}</p>
+    <p class="muted small">${getStatus().linked ? 'Data is saved on this device and backed up to your account, so it’s available on every device you sign in on.' : adapter.persistent ? 'Data stays in this browser on this device. Sign in under “Sync across devices” to back it up and use it everywhere, or export a backup regularly.' : 'Browser storage is unavailable, so data will be lost when you close this tab. Export before leaving.'}</p>
     <div class="row-wrap">
       <button class="btn ghost sm" data-action="export-json">${icon('download', 16)} Export JSON backup</button>
       <button class="btn ghost sm" data-action="export-csv" data-kind="tasks">${icon('download', 16)} Missions CSV</button>
