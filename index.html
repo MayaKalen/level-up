@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d14">
+  <meta name="description" content="LEVEL UP — a gamified personal productivity app. Missions, habits, goals, sales and XP.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LEVEL UP</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="LEVEL UP">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    try {
+      var s = JSON.parse(localStorage.getItem('levelup:state:v1') || 'null');
+      var t = s && s.settings && s.settings.theme;
+      if (t === 'light' || (t === 'system' && matchMedia('(prefers-color-scheme: light)').matches)) document.documentElement.dataset.theme = 'light';
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+  </svg>
+  <div id="app" class="app">
+    <div class="boot" role="status"><span class="spinner" aria-hidden="true"></span>Loading LEVEL UP…</div>
+  </div>
+  <button id="focus-pill" class="focus-pill" hidden></button>
+  <div id="overlay-root"></div>
+  <div id="toast-root" class="toasts" aria-live="polite"></div>
+  <noscript><p style="padding:24px;color:#fff;background:#0b0d14">LEVEL UP needs JavaScript enabled.</p></noscript>
+  <script>
+    // If the app fails to start (e.g. a script error), show a way out instead of a spinner.
+    setTimeout(function () {
+      var b = document.querySelector('.boot');
+      if (b) b.innerHTML = '<div style="text-align:center;max-width:320px"><p><strong>LEVEL UP couldn’t start.</strong></p><p>Your saved data is still in this browser. Try reloading the page.</p><button class="btn primary" onclick="location.reload()">Reload</button></div>';
+    }, 8000);
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
